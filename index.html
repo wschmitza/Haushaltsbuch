@@ -1146,6 +1146,26 @@ details.vd[open] summary{margin-bottom:10px}
   const buchung = (v, d) => ({id: 'r_' + v.id + '_' + d, d, t: v.t, c: v.c, a: v.a, k: v.k, n: v.name, r: v.id, ts: Date.now()});
   async function autoBuchen() {
     if (!db || !loaded || !vLoaded || autoRunning) return;
+    // Einmalige Reparatur: Fixkosten ab 01.11.2026, deren Fälligkeit schon weitergezählt wurde, deren Buchung aber fehlt.
+    let fixDone = '1'; try { fixDone = localStorage.getItem('hb.nachholen1'); } catch (e) {}
+    if (!fixDone) {
+      const t0 = today(), all0 = Object.values(months).flat();
+      const ids0 = new Set(all0.map((i) => i.id)), sig0 = new Set(all0.map((i) => [i.d, i.k, i.c, i.a].join('|')));
+      const fix = [];
+      for (const v of vertraege) {
+        if (!v.aktiv || !v.auto || !v.naechste) continue;
+        const p = addMonths(v.naechste, -(v.intervall || 1), v.tag), stop = stopDate(v);
+        if (p < '2026-11-01' || p > t0 || (stop && p > stop)) continue;
+        if (ids0.has('r_' + v.id + '_' + p) || sig0.has([p, v.k, v.c, v.a].join('|'))) continue;
+        fix.push({add: buchung(v, p)});
+      }
+      autoRunning = true;
+      let okFix = true;
+      try { if (fix.length) okFix = await saveItems(fix); } finally { autoRunning = false; }
+      if (!okFix) return;
+      try { localStorage.setItem('hb.nachholen1', '1'); } catch (e) {}
+      if (fix.length) toast(fix.length === 1 ? '1 fehlende Fixkosten-Buchung nachgeholt' : fix.length + ' fehlende Fixkosten-Buchungen nachgeholt');
+    }
     const t = today(); const ids = new Set(Object.values(months).flat().map((i) => i.id));
     const adds = []; let changed = false;
     const nv = vertraege.map((v) => {
@@ -1161,8 +1181,13 @@ details.vd[open] summary{margin-bottom:10px}
     if (!adds.length && !changed) return;
     autoRunning = true;
     try {
+      // Erst die Buchungen speichern, dann die Fälligkeit weiterzählen. Wird die App dazwischen beendet,
+      // erkennt der nächste Lauf die Buchungen an ihrer id und zählt nur noch weiter: keine Lücke, keine Dublette.
+      if (adds.length) {
+        if (!(await saveItems(adds))) return;
+        toast(adds.length === 1 ? '1 Fixkosten-Buchung automatisch eingetragen' : adds.length + ' Fixkosten-Buchungen automatisch eingetragen');
+      }
       if (changed) { vertraege = nv; await saveVertraege(); }
-      if (adds.length) { await saveItems(adds); toast(adds.length === 1 ? '1 Fixkosten-Buchung automatisch eingetragen' : adds.length + ' Fixkosten-Buchungen automatisch eingetragen'); }
     } finally { autoRunning = false; }
   }
 

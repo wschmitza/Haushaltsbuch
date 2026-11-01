@@ -69,11 +69,15 @@
       });
     });
   }
+  var pendingWrites = 0;
   async function write(ops) {
-    await load();
-    ops.forEach(function (o) { if (o.data == null) cache.delete(o.path); else cache.set(o.path, clone(o.data)); });
-    notify();
-    await persist(ops);
+    pendingWrites++;
+    try {
+      await load();
+      ops.forEach(function (o) { if (o.data == null) cache.delete(o.path); else cache.set(o.path, clone(o.data)); });
+      notify();
+      await persist(ops);
+    } finally { pendingWrites--; }
   }
   function listen(kind, path, cb, err) {
     var l = { kind: kind, path: path, cb: cb };
@@ -250,7 +254,9 @@
   }
   function checkDay() {
     if (document.visibilityState === 'hidden') return;
-    if (today() !== loadedDay && !busyTyping()) location.reload();
+    if (today() === loadedDay || busyTyping()) return;
+    if (pendingWrites > 0) { setTimeout(checkDay, 500); return; } // nie mitten im Speichern neu laden
+    location.reload();
   }
   document.addEventListener('visibilitychange', checkDay);
   window.addEventListener('pageshow', checkDay);
