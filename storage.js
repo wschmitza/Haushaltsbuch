@@ -237,6 +237,26 @@
     }
   });
 
+  /* ---------- Tageswechsel ----------
+     iOS setzt Home-Bildschirm-Apps beim erneuten Öffnen fort, statt sie neu zu laden.
+     Datum im Formular und automatische Fixkosten-Buchungen werden aber nur beim Laden berechnet.
+     Deshalb: Hat seit dem Laden ein neuer Tag begonnen, wird die App neu geladen. Die Daten liegen sicher in IndexedDB. */
+  var loadedDay = today();
+  function busyTyping() {
+    var a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+    var b = document.getElementById('fBetrag');
+    return !!(b && b.value.trim());
+  }
+  function checkDay() {
+    if (document.visibilityState === 'hidden') return;
+    if (today() !== loadedDay && !busyTyping()) location.reload();
+  }
+  document.addEventListener('visibilitychange', checkDay);
+  window.addEventListener('pageshow', checkDay);
+  window.addEventListener('focus', checkDay);
+  setInterval(checkDay, 60000);
+
   if (navigator.storage && navigator.storage.persist) { try { navigator.storage.persist(); } catch (e) {} }
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
